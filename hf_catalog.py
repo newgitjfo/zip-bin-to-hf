@@ -54,7 +54,7 @@ def write_status(root,repo,symbol,results,error=None,summary=False):
     (root/'upload_report.json').write_text(json.dumps(payload,indent=2))
     if not summary:return
     counts={name:sum(r['result']==name for r in results) for name in
-            ('uploaded','index_repaired','skipped_existing','needs_replace_or_review')}
+            ('uploaded','index_repaired','skipped_existing','already_unchanged','needs_replace_or_review')}
     print('HF RESULT',json.dumps(counts),flush=True)
     filename=os.getenv('GITHUB_STEP_SUMMARY')
     if filename:
@@ -62,8 +62,8 @@ def write_status(root,repo,symbol,results,error=None,summary=False):
             f.write(f'\n## Hugging Face import\nDataset: `{repo}`\n\nDaily directory: `{symbol}/`\n\n')
             for name,value in counts.items():f.write(f'- {name}: **{value}**\n')
             if error:f.write(f'\nStopped: {error}. Check upload_report.json and logs.\n')
-            if counts['uploaded']==0 and counts['skipped_existing']:
-                f.write('\nNo new BIN upload: existing files were skipped. Use replace_existing only if replacement is intended.\n')
+            if counts['uploaded']==0 and (counts['skipped_existing'] or counts['already_unchanged']):
+                f.write('\nNo new BIN upload: existing files were skipped or all submitted contents already matched.\n')
 
 
 def publish(root,report,repo,digits,replace_existing=False,batch_size=30):
@@ -115,8 +115,13 @@ def publish(root,report,repo,digits,replace_existing=False,batch_size=30):
                 operations.append(CommitOperationAdd(path_in_repo='index.txt',path_or_fileobj=merged_index(symbols,entries).encode()))
                 commit=api.create_commit(repo,repo_type='dataset',operations=operations,parent_commit=revision,
                                          commit_message=f'Import daily BINs and repair catalog: {symbol}')
-                results.extend(dict(item,commit=commit.oid) for item in pending)
-                print('COMMITTED daily BIN/catalog changes:',len(pending),flush=True)
+                if commit.oid == revision:
+                    # HF returns the existing HEAD when every operation is unchanged.
+                    results.extend(dict(item,result='already_unchanged',commit=commit.oid) for item in pending)
+                    print('NO CHANGE: remote BINs/catalog already match; no new commit:',len(pending),flush=True)
+                else:
+                    results.extend(dict(item,commit=commit.oid) for item in pending)
+                    print('COMMITTED daily BIN/catalog changes:',len(pending),flush=True)
             write_status(root,repo,symbol,results)
         if any(r['result']=='needs_replace_or_review' for r in results):
             raise ValueError('Existing different BINs need review or explicit replace_existing')
