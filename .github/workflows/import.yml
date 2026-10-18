@@ -1,0 +1,81 @@
+name: ZIP annual BIN to daily HF files
+on:
+  workflow_dispatch:
+    inputs:
+      zip_url:
+        description: 'Public direct HTTPS ZIP URL; blank uses SOURCE_ZIP_URL secret'
+        type: string
+        required: false
+        default: ''
+      symbol:
+        description: 'Symbol of source ticks (e.g. USDJPY, EURUSD)'
+        type: string
+        required: true
+        default: 'USDJPY'
+      member:
+        description: 'Exact BIN path inside ZIP; blank if only one BIN exists'
+        type: string
+        required: false
+        default: ''
+      digits:
+        description: 'New catalog symbol digits (JPY=3; EURUSD=5)'
+        type: string
+        required: true
+        default: '3'
+      confirm_complete_days:
+        description: 'I verified the source covers complete intended UTC days'
+        type: boolean
+        required: true
+        default: false
+      replace_existing:
+        description: 'Replace same-name HF daily BIN files (otherwise skip)'
+        type: boolean
+        default: false
+permissions:
+  contents: read
+concurrency:
+  group: zip-import-hf-writer
+  cancel-in-progress: false
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r requirements.txt
+      - name: Offline splitter and catalog tests
+        run: python -m unittest discover -s tests -t . -v
+      - name: Download ZIP, split BIN, upload daily files and catalog
+        env:
+          ZIP_URL: ${{ inputs.zip_url || secrets.SOURCE_ZIP_URL }}
+          SYMBOL: ${{ inputs.symbol }}
+          ZIP_MEMBER: ${{ inputs.member }}
+          PRICE_DIGITS: ${{ inputs.digits }}
+          CONFIRMED: ${{ inputs.confirm_complete_days }}
+          REPLACE: ${{ inputs.replace_existing }}
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          HF_DATASET: ${{ vars.HF_DATASET || 'Esmaeil9ss/Tickdata' }}
+          HF_HUB_DISABLE_PROGRESS_BARS: '1'
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$CONFIRMED" != 'true' ]]; then
+            echo 'Confirm source-day completeness before starting the import.'
+            exit 1
+          fi
+          args=(--upload --confirm-complete-days --digits "$PRICE_DIGITS")
+          if [[ "$REPLACE" == 'true' ]]; then args+=(--replace-existing); fi
+          python -u import_zip.py "${args[@]}"
+      - name: Save reports (source ZIP and BINs are not published as artifacts)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: zip-import-report-${{ github.run_id }}
+          path: |
+            reports/
+            work/**/upload_report.json
+          retention-days: 7
+          if-no-files-found: warn
