@@ -105,7 +105,9 @@ def publish(root,report,repo,digits,replace_existing=False,batch_size=30):
                 if d['path'] in entries and d['path'] not in remote and not replace_existing:
                     raise ValueError('Index references missing remote file; enable replacement only after review')
                 operations.append(CommitOperationAdd(path_in_repo=d['path'],path_or_fileobj=str(file)))
-                audit=dict(d,source='ZIP annual BIN',source_member=report['source_member'],
+                audit=dict(d,source=report.get('source_format','ZIP BIN'),
+                           source_member=d.get('source_member',report['source_member']),
+                           source_members=d.get('source_members',[report['source_member']]),
                            source_completeness='user-confirmed; not independently provable from timestamps')
                 operations.append(CommitOperationAdd(path_in_repo=f"audit/zip/{symbol}/{d['day']}.json",path_or_fileobj=json.dumps(audit).encode()))
                 entries[d['path']]=row
@@ -116,7 +118,6 @@ def publish(root,report,repo,digits,replace_existing=False,batch_size=30):
                 commit=api.create_commit(repo,repo_type='dataset',operations=operations,parent_commit=revision,
                                          commit_message=f'Import daily BINs and repair catalog: {symbol}')
                 if commit.oid == revision:
-                    # HF returns the existing HEAD when every operation is unchanged.
                     results.extend(dict(item,result='already_unchanged',commit=commit.oid) for item in pending)
                     print('NO CHANGE: remote BINs/catalog already match; no new commit:',len(pending),flush=True)
                 else:

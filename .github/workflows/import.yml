@@ -1,4 +1,4 @@
-name: ZIP annual BIN to daily HF files
+name: ZIP daily or annual BIN to HF
 on:
   workflow_dispatch:
     inputs:
@@ -8,12 +8,12 @@ on:
         required: false
         default: ''
       symbol:
-        description: 'Symbol of source ticks (e.g. USDJPY, EURUSD)'
+        description: 'Single symbol shared by all selected BINs (e.g. USDJPY, EURUSD)'
         type: string
         required: true
         default: 'USDJPY'
       member:
-        description: 'Exact BIN path inside ZIP; blank if only one BIN exists'
+        description: 'Blank = ALL BINs (daily/annual); set exact path to select just one'
         type: string
         required: false
         default: ''
@@ -46,9 +46,9 @@ jobs:
         with:
           python-version: '3.12'
       - run: pip install -r requirements.txt
-      - name: Offline splitter and catalog tests
+      - name: Offline splitter, collection and catalog tests
         run: python -m unittest discover -s tests -t . -v
-      - name: Download ZIP, split BIN, upload daily files and catalog
+      - name: Download ZIP, validate all daily or annual BINs and upload catalog
         env:
           ZIP_URL: ${{ inputs.zip_url || secrets.SOURCE_ZIP_URL }}
           SYMBOL: ${{ inputs.symbol }}
@@ -68,7 +68,7 @@ jobs:
           fi
           args=(--upload --confirm-complete-days --digits "$PRICE_DIGITS")
           if [[ "$REPLACE" == 'true' ]]; then args+=(--replace-existing); fi
-          python -u import_zip.py "${args[@]}"
+          python -u import_collection.py "${args[@]}"
       - name: Save reports (source ZIP and BINs are not published as artifacts)
         if: always()
         uses: actions/upload-artifact@v4
