@@ -26,11 +26,11 @@ on:
         description: 'I verified the source covers complete intended UTC days'
         type: boolean
         required: true
-        default: false
+        default: true
       replace_existing:
         description: 'Replace same-name HF daily BIN files (otherwise skip)'
         type: boolean
-        default: false
+        default: true
 permissions:
   contents: read
 concurrency:
