@@ -18,10 +18,10 @@ on:
         required: false
         default: ''
       digits:
-        description: 'New catalog symbol digits (JPY=3; EURUSD=5)'
+        description: 'Leave blank for known symbols; required for unknown symbols (0-12)'
         type: string
-        required: true
-        default: '3'
+        required: false
+        default: ''
       confirm_complete_days:
         description: 'I verified the source covers complete intended UTC days'
         type: boolean
@@ -66,7 +66,8 @@ jobs:
             echo 'Confirm source-day completeness before starting the import.'
             exit 1
           fi
-          args=(--upload --confirm-complete-days --digits "$PRICE_DIGITS")
+          args=(--upload --confirm-complete-days)
+          if [[ -n "$PRICE_DIGITS" ]]; then args+=(--digits "$PRICE_DIGITS"); fi
           if [[ "$REPLACE" == 'true' ]]; then args+=(--replace-existing); fi
           python -u import_collection.py "${args[@]}"
       - name: Save reports (source ZIP and BINs are not published as artifacts)
