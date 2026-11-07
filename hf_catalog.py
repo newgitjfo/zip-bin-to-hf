@@ -4,6 +4,7 @@ import json
 import os
 import re
 from pathlib import Path
+from symbol_digits import SYMBOL_DIGITS, resolve_digits
 
 
 def digest(path):
@@ -54,7 +55,7 @@ def write_status(root,repo,symbol,results,error=None,summary=False):
     (root/'upload_report.json').write_text(json.dumps(payload,indent=2))
     if not summary:return
     counts={name:sum(r['result']==name for r in results) for name in
-            ('uploaded','index_repaired','skipped_existing','already_unchanged','needs_replace_or_review')}
+            ('uploaded','index_repaired','skipped_existing','digits_updated','already_unchanged','needs_replace_or_review')}
     print('HF RESULT',json.dumps(counts),flush=True)
     filename=os.getenv('GITHUB_STEP_SUMMARY')
     if filename:
@@ -71,6 +72,7 @@ def publish(root,report,repo,digits,replace_existing=False,batch_size=30):
     token=os.environ['HF_TOKEN'];api=HfApi(token=token)
     root=Path(root);symbol=report['symbol'];results=[];error=None
     if not re.fullmatch('[A-Z0-9]{3,32}',symbol):raise ValueError('Unsafe symbol')
+    digits=resolve_digits(symbol,digits)
     print('HF TARGET',repo,'DAILY DIRECTORY',symbol+'/',flush=True)
     try:
         for offset in range(0,len(report['days']),batch_size):
@@ -82,6 +84,13 @@ def publish(root,report,repo,digits,replace_existing=False,batch_size=30):
             path=hf_hub_download(repo,'index.txt',repo_type='dataset',revision=revision,token=token)
             symbols,entries=parse_index(Path(path).read_text('utf-8-sig'))
             operations=[];pending=[];changed=False
+            # Correct only this known symbol's digits; preserve all other fields.
+            digits_changed=False
+            if symbol in SYMBOL_DIGITS and symbol in symbols:
+                parts=symbols[symbol].split('|')
+                if parts[4] != str(digits):
+                    parts[4]=str(digits);symbols[symbol]='|'.join(parts)
+                    changed=digits_changed=True
             for d in batch:
                 if not re.fullmatch(r'\d{4}-\d{2}-\d{2}',d['day']) or d['path']!=f"{symbol}/{symbol}_{d['day']}.BIN":
                     raise ValueError('Daily path is not in its symbol directory')
@@ -113,6 +122,8 @@ def publish(root,report,repo,digits,replace_existing=False,batch_size=30):
                 entries[d['path']]=row
                 symbols.setdefault(symbol,f'SYM|{symbol}|{symbol}|0|{digits}')
                 changed=True;pending.append({'path':d['path'],'result':'uploaded'})
+            if digits_changed:
+                pending.append({'path':f'SYM|{symbol}','result':'digits_updated'})
             if changed:
                 operations.append(CommitOperationAdd(path_in_repo='index.txt',path_or_fileobj=merged_index(symbols,entries).encode()))
                 commit=api.create_commit(repo,repo_type='dataset',operations=operations,parent_commit=revision,

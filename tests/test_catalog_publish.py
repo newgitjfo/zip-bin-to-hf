@@ -36,6 +36,20 @@ class Tests(unittest.TestCase):
         c=self.commits[0];self.assertEqual(c['parent_commit'],'pinned')
         self.assertIn(self.key,[o.path_in_repo for o in c['operations']])
         self.assertIn('index.txt',[o.path_in_repo for o in c['operations']]);self.assertEqual(r[0]['result'],'uploaded')
+    def test_existing_symbol_digits_corrected_even_when_file_skipped(self):
+        self.remote()
+        self.index.write_text('BRIDX1\nSYM|USDJPY|Original|42|5\nSYM|OTHER|Other|0|7\n'+f"FILE|{self.key}|2025-01-02|{self.d['bytes']}\n")
+        r=publish(self.root,self.report,'owner/dataset',3)
+        self.assertEqual([x['result'] for x in r],['skipped_existing','digits_updated'])
+        ops=self.commits[0]['operations']
+        self.assertEqual([o.path_in_repo for o in ops],['index.txt'])
+        text=ops[0].path_or_fileobj.decode()
+        self.assertIn('SYM|USDJPY|Original|42|3',text)
+        self.assertIn('SYM|OTHER|Other|0|7',text)
+        self.assertIn(f"FILE|{self.key}|2025-01-02|{self.d['bytes']}",text)
+    def test_bad_known_digits_refused_before_commit(self):
+        with self.assertRaises(ValueError): publish(self.root,self.report,'owner/dataset',5)
+        self.assertFalse(self.commits)
     def test_missing_index_repaired_without_reupload(self):
         self.remote();r=publish(self.root,self.report,'owner/dataset',3)
         self.assertEqual(r[0]['result'],'index_repaired')

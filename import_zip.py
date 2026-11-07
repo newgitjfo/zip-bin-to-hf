@@ -20,6 +20,7 @@ import urllib.parse
 import urllib.request
 import zipfile
 from hf_catalog import publish
+from symbol_digits import resolve_digits
 
 UTC=dt.timezone.utc
 DAY_MS=86400000
@@ -202,11 +203,13 @@ def main():
     p.add_argument('--upload',action='store_true')
     p.add_argument('--confirm-complete-days',action='store_true')
     p.add_argument('--replace-existing',action='store_true')
-    p.add_argument('--digits',type=int,default=3)
+    p.add_argument('--digits',type=int,default=None, help='Automatic for known symbols; required for unknown symbols')
     args=p.parse_args()
     symbol=args.symbol.strip().upper()
     if not re.fullmatch('[A-Z0-9]{3,32}',symbol):p.error('Invalid symbol')
-    if not 0<=args.digits<=12:p.error('digits must be 0..12')
+    try:args.digits=resolve_digits(symbol,args.digits)
+    except ValueError as e:p.error(str(e))
+    print('DIGITS',symbol,args.digits,flush=True)
     if not 0<args.max_download_gb<=10 or not 0<args.max_bin_gb<=12:p.error('Invalid size limit')
     if args.upload and not args.confirm_complete_days:p.error('Upload needs confirmation that source contains complete intended days')
     if args.upload and not os.getenv('HF_TOKEN'):p.error('Missing HF_TOKEN Actions Secret')
